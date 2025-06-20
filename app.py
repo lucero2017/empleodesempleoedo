@@ -3,16 +3,18 @@ import pandas as pd
 import plotly.express as px
 from funciones import cargar_datos, modelo_regresion, modelo_clasificacion
 from fpdf import FPDF
+import os
 import tempfile
 
 # --- Configuración de página ---
 st.set_page_config(page_title="Empleo y Desempleo en el Estado de México", layout="wide")
 
-# --- CSS ---
+# --- CSS para diseño ---
 st.markdown("""
     <style>
     body { background-color: #ffffff; }
     .main { font-family: Arial, sans-serif; color: #333333; }
+
     .title-box {
         background: #800020;
         border-radius: 20px;
@@ -75,12 +77,14 @@ nav_html = "".join(
     [f"<a class='nav-button' href='?page={item}'>{item}</a>" for item in nav_items]
 )
 st.markdown(f"<div style='text-align: center;'>{nav_html}</div>", unsafe_allow_html=True)
+
+# --- Línea dorada decorativa ---
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- Cargar datos ---
 df = cargar_datos("data/empleodesempleo.csv")
 
-# --- Intro general ---
+# --- Funciones de introducción ---
 def mostrar_intro_general():
     st.markdown("""
     <div class="intro-text">
@@ -111,7 +115,7 @@ def mostrar_intro_anual(año):
     </div>
     """, unsafe_allow_html=True)
 
-# --- Inicio ---
+# --- Sección Inicio ---
 if seccion == "Inicio":
     st.header("Introducción General")
     mostrar_intro_general()
@@ -123,16 +127,24 @@ if seccion == "Inicio":
         st.warning(f"No se encontró la imagen '{img_path}'.")
 
     st.markdown("<hr>", unsafe_allow_html=True)
+
     st.subheader("Base de datos de empleo y desempleo (2020 - 2024)")
+    st.write("Esta base de datos muestra información clave para analizar las tendencias del empleo y desempleo en el Estado de México.")
     st.dataframe(df, use_container_width=True)
 
-# --- Por año ---
+# --- Apartados por año ---
 elif seccion in ["2020", "2021", "2022", "2023", "2024"]:
     año = int(seccion)
     st.header(f"Empleo y Desempleo en {año}")
     mostrar_intro_anual(año)
+
     df_año = df[df['Año'] == año]
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.subheader(f"Tabla de datos para {año}")
     st.dataframe(df_año, use_container_width=True)
+
+    st.markdown("<hr>", unsafe_allow_html=True)
 
     fig1 = px.histogram(df_año, x='Sexo', color='Sexo',
                         color_discrete_sequence=['#800020', '#FFD700'],
@@ -144,6 +156,28 @@ elif seccion in ["2020", "2021", "2022", "2023", "2024"]:
                   color_discrete_sequence=['#800020', '#FFD700'],
                   title=f"Ingreso Promedio por Sexo en {año}")
     st.plotly_chart(fig2, use_container_width=True)
+
+    if 'Horas_Trabajo' in df_año.columns:
+        fig3 = px.bar(df_año.groupby('Sexo')['Horas_Trabajo'].mean().reset_index(),
+                      x='Sexo', y='Horas_Trabajo', color='Sexo',
+                      color_discrete_sequence=['#800020', '#FFD700'],
+                      title=f"Promedio de Horas Trabajadas por Sexo en {año}")
+        st.plotly_chart(fig3, use_container_width=True)
+
+    if 'Tipo_Empleo' in df_año.columns:
+        empleo_counts = df_año['Tipo_Empleo'].value_counts().reset_index()
+        empleo_counts.columns = ['Tipo_Empleo', 'Count']
+        fig4 = px.pie(empleo_counts, names='Tipo_Empleo', values='Count',
+                      title=f"Proporción de Empleos Formales e Informales en {año}",
+                      color_discrete_sequence=['#800020', '#FFD700'])
+        st.plotly_chart(fig4, use_container_width=True)
+
+    if 'Posicion_Ocupacion' in df_año.columns and 'Total_Poblacion' in df_año.columns:
+        ocupacion_sum = df_año.groupby('Posicion_Ocupacion')['Total_Poblacion'].sum().reset_index()
+        fig5 = px.pie(ocupacion_sum, names='Posicion_Ocupacion', values='Total_Poblacion',
+                      title=f"Posición/Ocupación vs Población Total en {año}",
+                      color_discrete_sequence=px.colors.sequential.RdBu)
+        st.plotly_chart(fig5, use_container_width=True)
 
 # --- Predicción ---
 elif seccion == "Realizar Predicción":
@@ -166,33 +200,29 @@ elif seccion == "Descargas":
     csv = df.to_csv(index=False).encode('utf-8')
     st.download_button("Descargar Base de Datos CSV", csv, "empleodesempleo.csv", "text/csv")
 
-    st.markdown("### Generar Reporte PDF (SOLO TEXTO)")
-    if st.button("Generar y Descargar Reporte PDF (Texto)"):
+    # ✅ Nueva funcionalidad: Descargar introducción como PDF de texto
+    if st.button("Descargar Introducción General (PDF)"):
         pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, "Reporte General de Empleo y Desempleo", ln=True)
-
         pdf.set_font("Arial", size=12)
-        texto = """
-Este es un reporte de texto resumen del análisis de empleo y desempleo en el Estado de México.
-Incluye:
-- Descripción general de la base de datos.
-- Resumen por año de los datos cargados.
-- Para ver gráficas interactivas, consulta la plataforma o descarga las tablas.
-
-Este PDF no incluye imágenes, para garantizar compatibilidad en la nube.
-"""
-        pdf.multi_cell(0, 10, texto)
-
-        for año in range(2020, 2025):
-            pdf.add_page()
-            pdf.set_font("Arial", "B", 14)
-            pdf.cell(0, 10, f"Año {año}", ln=True)
-            pdf.set_font("Arial", size=12)
-            texto_año = f"Resumen de datos para el año {año}. Para detalles visuales, consulte la plataforma."
-            pdf.multi_cell(0, 10, texto_año)
+        pdf.multi_cell(0, 10, txt=(
+            "El Estado de México, uno de los motores económicos de la nación, refleja una dinámica "
+            "laboral compleja y en constante evolución. Este territorio concentra una gran parte de la "
+            "fuerza laboral del país, destacándose tanto en industrias manufactureras como en el sector "
+            "servicios. Durante los últimos cinco años, factores como la pandemia, la recuperación "
+            "económica, la digitalización y las reformas laborales han moldeado el panorama de empleo y "
+            "desempleo.\n\nEntre las principales características destacan: Alta concentración de empleo "
+            "formal en zonas industriales y corredores urbanos; una significativa proporción de empleo "
+            "informal en áreas periurbanas y rurales; fluctuaciones en los ingresos promedio, estrechamente "
+            "vinculadas a la estabilidad económica nacional; distribución equitativa del empleo entre sexos, "
+            "aunque persisten brechas salariales y de horas trabajadas.\n\nAdemás, municipios como Toluca, "
+            "Ecatepec y Naucalpan figuran entre los de mayor actividad económica y empleo. No obstante, "
+            "el desempleo afecta con mayor dureza a jóvenes y mujeres, especialmente en épocas de desaceleración "
+            "económica. Esta plataforma permite analizar datos de 2020 a 2024, visualizar gráficas de distribución "
+            "por sexo, ingresos, tipos de empleo y posición ocupacional, además de realizar predicciones "
+            "personalizadas. Es una herramienta valiosa para académicos, estudiantes, tomadores de decisiones y "
+            "ciudadanía interesada en comprender la evolución del mercado laboral mexiquense."
+        ))
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
             pdf.output(tmp_pdf.name)
@@ -200,8 +230,8 @@ Este PDF no incluye imágenes, para garantizar compatibilidad en la nube.
 
         with open(pdf_path, "rb") as f:
             st.download_button(
-                label="Descargar Reporte PDF",
+                label="Descargar Introducción PDF",
                 data=f,
-                file_name="reporte_empleo_mexico.pdf",
+                file_name="introduccion_empleo_mexico.pdf",
                 mime="application/pdf"
             )
