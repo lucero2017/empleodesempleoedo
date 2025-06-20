@@ -1,98 +1,90 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from funciones import cargar_datos, modelo_regresion, modelo_clasificacion
 from fpdf import FPDF
 import tempfile
-import os
 
-st.set_page_config(page_title="Empleo y Desempleo", layout="wide")
+# --- Configuración de página ---
+st.set_page_config(page_title="Empleo y Desempleo - Streamlit Cloud", layout="wide")
 
-# Título y estilos
-st.markdown("""
-    <style>
-    .title { text-align: center; color: #800020; font-size: 3em; }
-    </style>
-    <h1 class='title'>🇲🇽 Empleo y Desempleo Estado de México</h1>
-""", unsafe_allow_html=True)
+# --- Datos de ejemplo ---
+df = pd.DataFrame({
+    "Año": [2020, 2020, 2021, 2021, 2022, 2022, 2023, 2023],
+    "Sexo": ["Hombre", "Mujer"] * 4,
+    "Nivel_Ingresos": [5000, 7000, 6000, 8000, 6500, 8500, 7000, 9000]
+})
 
-# Navegación
-nav_items = ["Inicio", "2020", "2021", "2022", "2023", "2024", "Predicción", "Descargas"]
-nav = st.query_params.get("page")
-if nav in nav_items:
-    seccion = nav
-else:
-    seccion = "Inicio"
+# --- Título ---
+st.title("Empleo y Desempleo — Streamlit Cloud")
 
-nav_html = "".join([f"<a href='?page={i}' style='margin:10px;'>{i}</a>" for i in nav_items])
-st.markdown(f"<div style='text-align:center'>{nav_html}</div>", unsafe_allow_html=True)
+# --- Selección de año ---
+año = st.selectbox("Selecciona un año", sorted(df["Año"].unique()))
+df_año = df[df["Año"] == año]
 
-st.markdown("<hr>", unsafe_allow_html=True)
+# --- Gráficas ---
+fig1 = px.histogram(df_año, x="Sexo", color="Sexo",
+                    color_discrete_sequence=['#800020', '#FFD700'],
+                    title=f"Distribución por Sexo - {año}")
 
-# Cargar datos
-df = cargar_datos("data/empleodesempleo.csv")
+fig2 = px.box(df_año, x="Sexo", y="Nivel_Ingresos", color="Sexo",
+              color_discrete_sequence=['#800020', '#FFD700'],
+              title=f"Ingreso Promedio por Sexo - {año}")
 
-# Inicio
-if seccion == "Inicio":
-    st.write("## Introducción")
-    st.write("""
-    El Estado de México es uno de los centros económicos más importantes...
-    (Aquí puedes extender tu texto a ~400 palabras sobre características, empleo formal e informal,
-    estado con más empleo, niveles de desempleo, recuperación post-pandemia, retos, etc.)
-    """)
-    st.dataframe(df)
+st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(fig2, use_container_width=True)
 
-# Por año
-elif seccion in ["2020", "2021", "2022", "2023", "2024"]:
-    año = int(seccion)
-    df_año = df[df['Año'] == año]
+# --- Botones para descargar cada gráfica como HTML (seguro en Cloud) ---
+html1 = fig1.to_html(full_html=True).encode()
+html2 = fig2.to_html(full_html=True).encode()
 
-    st.write(f"## Análisis {año}")
-    fig1 = px.histogram(df_año, x='Sexo', color='Sexo', title=f"Distribución por Sexo {año}")
-    st.plotly_chart(fig1)
+st.download_button(
+    "Descargar Distribución por Sexo (HTML)",
+    html1,
+    file_name=f"Distribucion_Sexo_{año}.html",
+    mime="text/html"
+)
 
-    fig2 = px.box(df_año, x='Sexo', y='Nivel_Ingresos', color='Sexo', title=f"Ingreso por Sexo {año}")
-    st.plotly_chart(fig2)
+st.download_button(
+    "Descargar Ingreso Promedio por Sexo (HTML)",
+    html2,
+    file_name=f"Ingreso_Sexo_{año}.html",
+    mime="text/html"
+)
 
-# Predicción
-elif seccion == "Predicción":
-    edad = st.slider("Edad", 18, 100, 30)
-    sexo = st.selectbox("Sexo", df['Sexo'].unique())
-    if st.button("Predecir Ingreso"):
-        st.write(modelo_regresion(df, edad, sexo))
-    if st.button("Predecir Categoría"):
-        st.write(modelo_clasificacion(df, edad, sexo))
+# --- Generar PDF SOLO con TEXTO (sin imágenes para evitar kaleido) ---
+if st.button("Generar PDF de Reporte (Texto)"):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, f"Reporte Empleo y Desempleo - {año}", ln=True)
 
-# Descargas
-elif seccion == "Descargas":
-    st.write("## 📄 Descargar PDF con Gráficas")
-    if st.button("Generar PDF"):
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=12)
+    texto = f"""
+Reporte de Análisis de Empleo y Desempleo para el Estado de México - Año {año}
 
-        for año in range(2020, 2025):
-            df_año = df[df['Año'] == año]
-            fig1 = px.histogram(df_año, x='Sexo', color='Sexo', title=f"Distribución por Sexo {año}")
-            fig2 = px.box(df_año, x='Sexo', y='Nivel_Ingresos', color='Sexo', title=f"Ingreso por Sexo {año}")
+Este documento es un resumen generado en la nube.
+Incluye:
+- Distribución por sexo del empleo.
+- Rango de ingresos promedio por sexo.
+- Para ver las gráficas interactivas, descárgalas desde la app como archivos HTML.
 
-            # Guardar imágenes temporalmente usando kaleido
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp1:
-                fig1.write_image(tmp1.name)
-                img1_path = tmp1.name
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp2:
-                fig2.write_image(tmp2.name)
-                img2_path = tmp2.name
+Características Clave:
+- Año: {año}
+- Variables: Sexo, Nivel de Ingresos
+- Información generada desde plataforma Streamlit Cloud.
 
-            pdf.add_page()
-            pdf.set_font("Arial", "B", 16)
-            pdf.cell(0, 10, f"Reporte {año}", ln=True)
-            pdf.image(img1_path, x=10, y=30, w=180)
-            pdf.ln(105)
-            pdf.image(img2_path, x=10, y=150, w=180)
+Gracias por usar esta plataforma.
+    """
+    pdf.multi_cell(0, 10, texto)
 
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
-            pdf.output(tmp_pdf.name)
-            pdf_path = tmp_pdf.name
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
+        pdf.output(tmp_pdf.name)
+        pdf_path = tmp_pdf.name
 
-        with open(pdf_path, "rb") as f:
-            st.download_button("📄 Descargar PDF", f, file_name="reporte.pdf", mime="application/pdf")
+    with open(pdf_path, "rb") as f:
+        st.download_button(
+            "Descargar PDF de Reporte (Texto)",
+            f,
+            file_name=f"reporte_texto_{año}.pdf",
+            mime="application/pdf"
+        )
